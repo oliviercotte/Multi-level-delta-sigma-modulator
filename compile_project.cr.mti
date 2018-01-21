@@ -1,0 +1,262 @@
+C:/Newcomputer/dsm_modelsim/cordic_types.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/cordic_types.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Compiling package cordic_types
+-- Compiling package body cordic_types
+-- Loading package cordic_types
+
+} {} {}} C:/Newcomputer/dsm_modelsim/my_clock_ip.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/my_clock_ip.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package std_logic_arith
+-- Loading package STD_LOGIC_UNSIGNED
+-- Loading package NUMERIC_STD
+-- Loading package VCOMPONENTS
+-- Compiling entity my_clock_ip
+-- Compiling architecture xilinx of my_clock_ip
+
+} {} {}} C:/Newcomputer/dsm_modelsim/cordic_core.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/cordic_core.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Loading package cordic_types
+-- Compiling entity cordic_core
+-- Compiling architecture pipelined_arch of cordic_core
+
+} {} {}} C:/Newcomputer/dsm_modelsim/ddfs_ctrl.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/ddfs_ctrl.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Loading package cordic_types
+-- Compiling entity ddfs_ctrl
+-- Compiling architecture rtl of ddfs_ctrl
+
+} {} {}} C:/Newcomputer/dsm_modelsim/channel_filter.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/channel_filter.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Compiling entity channel_filter
+-- Compiling architecture channel_filter_a of channel_filter
+-- Loading package bip_utils_pkg_v2_0
+-- Loading package NUMERIC_STD
+-- Loading package std_logic_textio
+-- Loading package fir_compiler_v5_0_sim_pkg
+-- Loading package ul_utils
+-- Loading package fir_compiler_v5_0_sim_comps
+-- Loading entity fir_compiler_v5_0
+
+} {} {}} C:/Newcomputer/dsm_modelsim/MATLAB_Function.vhd {1 {vcom -work work -2002 -explicit -stats=none {C:\Newcomputer\dsm_modelsim\MATLAB_Function.vhd}
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Loading package cordic_types
+-- Loading package dsm_pkg
+-- Compiling entity quantizer
+-- Compiling architecture rtl of quantizer
+
+} {} {}} C:/Newcomputer/dsm_modelsim/phase_generator.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/phase_generator.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Loading package cordic_types
+-- Compiling entity phase_generator
+-- Compiling architecture rtl of phase_generator
+-- Loading entity phase_accumulator
+
+} {} {}} C:/Newcomputer/dsm_modelsim/trigonometric_fct_generator.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/trigonometric_fct_generator.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Loading package cordic_types
+-- Compiling entity trigonometric_function_generator
+-- Compiling architecture rtl of trigonometric_function_generator
+-- Loading entity phase_generator
+-- Loading entity cordic_core
+
+} {} {}} C:/Newcomputer/dsm_modelsim/halfband_1.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/halfband_1.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Compiling entity halfband_1
+-- Compiling architecture halfband_1_a of halfband_1
+-- Loading package bip_utils_pkg_v2_0
+-- Loading package NUMERIC_STD
+-- Loading package std_logic_textio
+-- Loading package fir_compiler_v5_0_sim_pkg
+-- Loading package ul_utils
+-- Loading package fir_compiler_v5_0_sim_comps
+-- Loading entity fir_compiler_v5_0
+
+} {} {}} C:/Newcomputer/dsm_modelsim/phase_accumulator.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/phase_accumulator.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Loading package cordic_types
+-- Compiling entity phase_accumulator
+-- Compiling architecture inverse_trigonometric of phase_accumulator
+-- Compiling architecture hyperbolic of phase_accumulator
+-- Loading entity phase_accumulator
+-- Compiling architecture circular of phase_accumulator
+-- Loading entity phase_accumulator
+
+} {} {}} C:/Newcomputer/dsm_modelsim/halfband_2.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/halfband_2.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Compiling entity halfband_2
+-- Compiling architecture halfband_2_a of halfband_2
+-- Loading package bip_utils_pkg_v2_0
+-- Loading package NUMERIC_STD
+-- Loading package std_logic_textio
+-- Loading package fir_compiler_v5_0_sim_pkg
+-- Loading package ul_utils
+-- Loading package fir_compiler_v5_0_sim_comps
+-- Loading entity fir_compiler_v5_0
+
+} {} {}} C:/Newcomputer/dsm_modelsim/top_level_ddfs.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/top_level_ddfs.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Loading package cordic_types
+-- Compiling entity top_level_ddfs
+-- Compiling architecture structural of top_level_ddfs
+-- Loading entity ddfs_ctrl
+-- Loading entity trigonometric_function_generator
+
+} {} {}} C:/Newcomputer/dsm_modelsim/halfband_3.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/halfband_3.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Compiling entity halfband_3
+-- Compiling architecture halfband_3_a of halfband_3
+-- Loading package bip_utils_pkg_v2_0
+-- Loading package NUMERIC_STD
+-- Loading package std_logic_textio
+-- Loading package fir_compiler_v5_0_sim_pkg
+-- Loading package ul_utils
+-- Loading package fir_compiler_v5_0_sim_comps
+-- Loading entity fir_compiler_v5_0
+
+} {} {}} C:/Newcomputer/dsm_modelsim/halfband_4.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/halfband_4.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Compiling entity halfband_4
+-- Compiling architecture halfband_4_a of halfband_4
+-- Loading package bip_utils_pkg_v2_0
+-- Loading package NUMERIC_STD
+-- Loading package std_logic_textio
+-- Loading package fir_compiler_v5_0_sim_pkg
+-- Loading package ul_utils
+-- Loading package fir_compiler_v5_0_sim_comps
+-- Loading entity fir_compiler_v5_0
+
+} {} {}} C:/Newcomputer/dsm_modelsim/dsm_pkg.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/dsm_pkg.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Compiling package dsm_pkg
+
+} {} {}} C:/Newcomputer/dsm_modelsim/top_fpga_tb.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/top_fpga_tb.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Loading package dsm_pkg
+-- Compiling entity top_fpga_tb
+-- Compiling architecture behavior of top_fpga_tb
+
+} {} {}} C:/Newcomputer/dsm_modelsim/Subsystem.vhd {1 {vcom -work work -2002 -explicit -stats=none C:/Newcomputer/dsm_modelsim/Subsystem.vhd
+Model Technology ModelSim PE Student Edition vcom 10.4a Compiler 2015.03 Apr  7 2015
+-- Loading package STANDARD
+-- Loading package TEXTIO
+-- Loading package std_logic_1164
+-- Loading package NUMERIC_STD
+-- Loading package MATH_REAL
+-- Loading package instance fixed_pkg
+-- Loading package fixed_float_types
+-- Loading package fixed_generic_pkg
+-- Loading package body fixed_generic_pkg
+-- Loading package cordic_types
+-- Loading package dsm_pkg
+-- Compiling entity Silva_Steensgaard_Structure
+-- Compiling architecture rtl of Silva_Steensgaard_Structure
+
+} {} {}}

@@ -1,0 +1,261 @@
+----------------------------------------------------------------------------------
+-- Company: 
+-- Engineer: 
+-- 
+-- Create Date:    13:04:45 12/06/2017 
+-- Design Name: 
+-- Module Name:    top_fpga - Behavioral 
+-- Project Name: 
+-- Target Devices: 
+-- Tool versions: 
+-- Description: 
+--
+-- Dependencies: 
+--
+-- Revision: 
+-- Revision 0.01 - File Created
+-- Additional Comments: 
+--
+----------------------------------------------------------------------------------
+use work.cordic_types.all;
+use work.dsm_pkg.all;
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.math_real.all;
+use ieee.numeric_std.all;
+use ieee.fixed_pkg.all;
+
+-- Uncomment the following library declaration if instantiating
+-- any Xilinx primitives in this code.
+--library UNISIM;
+--use UNISIM.VComponents.all;
+
+entity top_fpga is
+	Port (
+		sys_clk 	: in  STD_LOGIC;
+		sys_rst 	: IN    std_logic;
+		bypass 		: in std_logic := '0';
+		DAC_in	: in  STD_LOGIC_VECTOR (33 downto 0);
+		DAC_out 	: out  STD_LOGIC_VECTOR (35 downto 0);
+		bitstream : out std_logic := '0'
+	);
+end top_fpga;
+
+architecture Behavioral of top_fpga is
+
+	component my_clock_ip
+	port
+	 (-- Clock in ports
+	  sys_clk           : in     std_logic;
+	  -- Clock out ports
+	  CLK_OUT1          : out    std_logic;
+	  CLK_OUT2          : out    std_logic;
+	  CLK_OUT3          : out    std_logic;
+	  CLK_OUT4          : out    std_logic;
+	  CLK_OUT5          : out    std_logic;
+	  CLK_OUT6          : out    std_logic
+	 );
+	end component;
+	
+	COMPONENT top_level_ddfs
+		port (
+			clk, rst_n : in std_logic;
+			ddfs_function_type : in std_logic_vector(3 downto 0);
+			ddfs_function_out : out std_logic_vector(BIT_WIDTH-1 downto 0));
+	END COMPONENT;
+
+	component channel_filter
+		port (
+			clk: in std_logic;
+			rfd: out std_logic;
+			rdy: out std_logic;
+			din: in std_logic_vector(33 downto 0);
+			dout: out std_logic_vector(33 downto 0));
+	end component;
+
+	component halfband_1
+		port (
+			clk: in std_logic;
+			rfd: out std_logic;
+			rdy: out std_logic;
+			din: in std_logic_vector(33 downto 0);
+			dout: out std_logic_vector(33 downto 0));
+	end component;
+
+	component halfband_2
+		port (
+			clk: in std_logic;
+			rfd: out std_logic;
+			rdy: out std_logic;
+			din: in std_logic_vector(33 downto 0);
+			dout: out std_logic_vector(33 downto 0));
+	end component;
+
+	component halfband_3
+		port (
+			clk: in std_logic;
+			rfd: out std_logic;
+			rdy: out std_logic;
+			din: in std_logic_vector(33 downto 0);
+			dout: out std_logic_vector(33 downto 0));
+	end component;
+
+	component halfband_4
+		port (
+			clk: in std_logic;
+			rfd: out std_logic;
+			rdy: out std_logic;
+			din: in std_logic_vector(33 downto 0);
+			dout: out std_logic_vector(35 downto 0));
+	end component;
+
+	COMPONENT Silva_Steensgaard_Structure IS
+		PORT(
+			clk                               :   IN    std_logic;
+			reset                             :   IN    std_logic;
+			Baseband_signal                   :   IN    std_logic_vector(35 downto 0);
+			Modulator_Output                  :   OUT   std_logic_vector(35 downto 0)
+		);
+	END COMPONENT;
+	
+	signal channel_filter_mux : STD_LOGIC_VECTOR(33 DOWNTO 0);
+	signal full_scale_ddfs_out_slv : STD_LOGIC_VECTOR(33 DOWNTO 0);
+	signal dout_ch_filt_slv : std_logic_vector(33 downto 0);
+	signal dout_hb1_slv : std_logic_vector(33 downto 0);
+	signal dout_hb2_slv : std_logic_vector(33 downto 0);
+	signal dout_hb3_slv : std_logic_vector(33 downto 0);
+	signal dout_hb4_slv : std_logic_vector(35 downto 0);
+	signal Baseband_signal_slv : std_logic_vector(35 downto 0);
+	signal Modulator_Output_slv : std_logic_vector(35 downto 0);
+	
+	signal ddfs_out : std_logic_vector(35 downto 0);
+
+	signal full_scale_ddfs_out : dsm_t;
+	signal dout_ch_filt: dsm_t;
+	signal dout_hb1: dsm_t;
+	signal dout_hb2: dsm_t;
+	signal dout_hb3: dsm_t;
+	signal dout_hb4: dsm_t;
+	signal Baseband_signal: dsm_t;
+	signal Modulator_Output: dsm_t;
+	
+	signal mod_in_st1 : dsm_t;
+	
+	-- Input clock buffering / unused connectors
+	signal clkin1      : std_logic;
+	-- Output clock buffering / unused connectors
+	signal clkfbout         : std_logic;
+	signal clkfbout_buf     : std_logic;
+	signal clkout0          : std_logic;
+	signal clkout1          : std_logic;
+	signal clkout2          : std_logic;
+	signal clkout3          : std_logic;
+	signal clkout4          : std_logic;
+	signal clkout5   : std_logic;
+	signal clkout6   : std_logic;
+	-- Unused status signals
+	signal locked_unused    : std_logic;
+  
+begin
+
+	U0 : my_clock_ip
+	port map (
+		-- Clock in ports
+		sys_clk => sys_clk,
+		-- Clock out ports
+		CLK_OUT1 => clkout1, --	7.68 		MHZ
+		CLK_OUT2 => clkout2, --	15.36 	MHZ
+		CLK_OUT3 => clkout3, --	30.72 	MHZ
+		CLK_OUT4 => clkout4, --	61.44 	MHZ
+		CLK_OUT5 => clkout5, --	128.88 	MHZ
+		CLK_OUT6 => clkout6	--	245.76 	MHZ
+	);
+	
+	U1 : top_level_ddfs
+	port map (
+		clk => clkout5,
+		rst_n => sys_rst,
+		ddfs_function_type => std_logic_vector(to_unsigned(1, 4)), -- SINE
+		ddfs_function_out => full_scale_ddfs_out_slv
+	);
+	
+	full_scale_ddfs_out <= to_sfixed(std_logic_vector(resize(signed(full_scale_ddfs_out_slv), 36)), full_scale_ddfs_out);
+	ddfs_out <= to_slv(resize(shift_right(full_scale_ddfs_out, 2), full_scale_ddfs_out));
+
+	channel_filter_mux <= full_scale_ddfs_out_slv when bypass = '0' else DAC_in;
+
+	-- Validation failed : FPGA_DECIVE SPARTAN-6 XC6SLX45-3
+	-- Core requires more DSP48A1 elements (40) than are available in a single column in the selected device (30).
+	U2 : channel_filter
+	port map (
+		clk => clkout1,
+		rfd => open,
+		rdy => open,
+		din => channel_filter_mux,
+		dout => dout_ch_filt_slv
+	);
+
+	U3 : halfband_1
+	port map (
+		clk => clkout2,
+		rfd => open,
+		rdy => open,
+		din => dout_ch_filt_slv,
+		dout => dout_hb1_slv
+	);
+
+	U4 : halfband_2
+	port map (
+		clk => clkout3,
+		rfd => open,
+		rdy => open,
+		din => dout_hb1_slv,
+		dout => dout_hb2_slv
+	);
+
+	U5 : halfband_3
+	port map (
+		clk => clkout4,
+		rfd => open,
+		rdy => open,
+		din => dout_hb2_slv,
+		dout => dout_hb3_slv
+	);
+
+	U6 : halfband_4
+	port map (
+		clk => clkout5,
+		rfd => open,
+		rdy => open,
+		din => dout_hb3_slv,
+		dout => dout_hb4_slv
+	);
+	
+	dout_ch_filt <= to_sfixed(std_logic_vector(resize(signed(dout_ch_filt_slv), 36)), dout_ch_filt);
+	dout_hb1 <= to_sfixed(std_logic_vector(resize(signed(dout_hb1_slv), 36)), dout_hb1);
+	dout_hb2 <= to_sfixed(std_logic_vector(resize(signed(dout_hb2_slv), 36)), dout_hb2);
+	dout_hb3 <= to_sfixed(std_logic_vector(resize(signed(dout_hb3_slv), 36)), dout_hb3);
+	dout_hb4 <= to_sfixed(dout_hb4_slv, dout_hb4);
+	
+	-- Multi-level quntizer
+--	mod_in_st1 <= resize(to_sfixed(dout_hb4_slv, Baseband_signal) * to_sfixed(1+4+16, Baseband_signal), Baseband_signal); -- approx. [-500, 500] for a 1024-level quantizer
+--	Baseband_signal_slv <= to_slv(mod_in_st1);
+	
+	-- Second-order Delta-Sigma modulator (OSR=32)
+	U7 : Silva_Steensgaard_Structure
+	port map ( 
+		clk => clkout5,
+		reset => sys_rst,
+		Baseband_signal => ddfs_out,
+		Modulator_Output => Modulator_Output_slv
+	);
+	
+	Baseband_signal <= to_sfixed(dout_hb4_slv, Baseband_signal);
+	Modulator_Output <= to_sfixed(Modulator_Output_slv, Modulator_Output);
+	
+	DAC_out <= Modulator_Output_slv;
+	-- bitstream <= '1' when Modulator_Output >= 0 else '0';
+
+end Behavioral;
+

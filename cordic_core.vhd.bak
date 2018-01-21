@@ -1,0 +1,918 @@
+-- Filename: cordic_core.vhd
+-- Author: Olivier Cotte
+-- Date: Jan-2017
+-- Description:	cordic algorithm
+
+use work.cordic_types.all;
+	
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.math_real.all;
+use ieee.numeric_std.all;
+use work.fixed_pkg.all;
+
+entity cordic_core is
+	port (
+		clk, rst_n : in std_logic;
+		mode : in std_logic;
+		coordinate_system : in std_logic_vector(2 downto 0);
+		x_in, y_in, z_in : in std_logic_vector(BIT_WIDTH-1 downto 0);
+		x_out, y_out, z_out : out std_logic_vector(BIT_WIDTH-1 downto 0);
+		valid : out std_logic
+	);
+end cordic_core;
+
+architecture pipelined_arch of cordic_core is
+-- INTERNAL PIPELINE --
+type inv_trig_delay_line is array (SEND_SYNC_PULSE_PIPELINED_NOMINAL downto 0) of Range_Of_Convergence_t;
+type unit_modulus_pipeline_stages is array (EXPANSION_RANGE to ITERATION_NUM+1) of Range_Of_Convergence_t;
+type mult_div_pipeline_stages is array (EXPANSION_RANGE to ITERATION_NUM+1) of Compressed_Angle_t;
+type inv_trig_pipeline_stages is array (EXPANSION_RANGE to ITERATION_NUM+1) of Range_Of_Convergence_t;
+type xy_hyperbolic_pipeline_stages is array (EXPANSION_RANGE to ITERATION_NUM+1) of Hyperbolic_Coordinate_t;
+type z_hyperbolic_pipeline_stages is array (EXPANSION_RANGE to ITERATION_NUM+1) of Hyperbolic_Angle_t;
+
+signal xc, yc, zc, tc : unit_modulus_pipeline_stages := (others => (others => '0'));
+signal xh, yh, th : xy_hyperbolic_pipeline_stages := (others => (others => '0'));
+signal zh : z_hyperbolic_pipeline_stages := (others => (others => '0'));
+signal xl, yl : xy_hyperbolic_pipeline_stages := (others => (others => '0'));
+signal zl : unit_modulus_pipeline_stages := (others => (others => '0'));
+signal x_s2, y_s2, z_s2 : unit_modulus_pipeline_stages := (others => (others => '0'));
+signal t_inv_trig_line : inv_trig_delay_line := (others => (others => '0'));
+signal x_i_ff, y_i_ff, z_i_ff : std_logic_vector(BIT_WIDTH-1 downto 0);
+
+-- ROTATION MODE --
+signal x_i_hyperbolic_rotation_ff, y_i_hyperbolic_rotation_ff : Hyperbolic_Coordinate_t := (others => '0');
+signal z_i_hyperbolic_rotation_ff : Hyperbolic_Angle_t := (others => '0');
+signal x_i_circular_rotation_ff, y_i_circular_rotation_ff, z_i_circular_rotation_ff : Range_Of_Convergence_t := (others => '0');
+
+-- VECTORING MODE --
+signal x_i_hyperbolic_vectoring_ff, y_i_hyperbolic_vectoring_ff : Hyperbolic_Coordinate_t := (others => '0');
+signal z_i_hyperbolic_vectoring_ff : Hyperbolic_Angle_t := (others => '0');
+signal x_i_circular_vectoring_ff, y_i_circular_vectoring_ff, z_i_circular_vectoring_ff : Range_Of_Convergence_t := (others => '0');
+
+-- INVERSE TRIGONOMETRIC --
+signal t_i_inv_trig_ff, t_i_inv_trig_ff1 : Range_Of_Convergence_t := (others => '0');
+
+-- HYPERBOLIC CONFIGURATION --
+signal x_i_hyperbolic_ff, y_i_hyperbolic_ff : Hyperbolic_Coordinate_t := (others => '0');
+signal z_i_hyperbolic_ff : Hyperbolic_Angle_t := (others => '0');
+
+-- CIRCULAR CONFIGURATION --
+signal x_i_circular_ff, y_i_circular_ff, z_i_circular_ff : Range_Of_Convergence_t := (others => '0');
+
+-- LINEAR CONFIGURATION --
+signal cordic_sech_2, cordic_sech : Range_Of_Convergence_t := (others => '0');
+
+-- STATE MACHINE --
+type Mode_t is (INIT, ROTATION, VECTORING);
+type Configuration_t is (INIT, INVERSE_TRIGONOMETRIC, HYPERBOLIC, CIRCULAR);
+signal mode_i_next, mode_i_ff : Mode_t := INIT;
+signal configuration_i_next, configuration_i_ff : Configuration_t := INIT;
+signal cordic_config_i_next, cordic_config_i_ff : cordic_config_t;
+signal re_init : std_logic;
+
+-- DEBUG --
+signal init_cnt, cnt_ff : integer range 0 to SEND_SYNC_PULSE_PIPELINED_EXT_SECH;
+signal sync, sync_ff, clear_flag: std_logic := '0';
+
+begin
+	------------------------------------------------------------------------------------------------
+	-- setup_iteration_pipeline : 
+	------------------------------------------------------------------------------------------------
+	cordic_config_i_next <= to_integer(unsigned(coordinate_system));
+	
+	------------------------------------------------------------------------------------------------
+	-- re_init_pipeline_delay : 
+	------------------------------------------------------------------------------------------------
+	re_init_pipeline_delay : process(cordic_config_i_next, cordic_config_i_ff) is
+	begin
+		if cordic_config_i_next /= cordic_config_i_ff then
+			re_init <= '1';
+		else
+			re_init <= '0';
+		end if;
+	end process re_init_pipeline_delay;
+	
+	------------------------------------------------------------------------------------------------
+	-- init_pipeline_delay : 
+	------------------------------------------------------------------------------------------------
+	init_pipeline_delay : process(cordic_config_i_next) is
+	begin
+		case cordic_config_i_next is
+			when CFG_INVERSE_TRIGONOMETRIC | CFG_HYPERBOLIC | CFG_CIRCULAR => init_cnt <= SEND_SYNC_PULSE_PIPELINED_NOMINAL;
+			when CFG_HYPERBOLIC_EXT  => init_cnt <= SEND_SYNC_PULSE_PIPELINED_EXT_SECH;
+			when others =>
+		end case;
+	end process init_pipeline_delay;
+	
+	------------------------------------------------------------------------------------------------
+	-- next_mode_state : 
+	------------------------------------------------------------------------------------------------
+	next_mode_state : process (mode, mode_i_ff) is
+	begin
+		--mode_i_next <= INIT;
+		mode_i_next <= mode_i_ff;
+		--mode_i_next <= (others => 'X');
+		case mode_i_ff is
+			when INIT =>
+			if mode = '0' then
+				mode_i_next <= ROTATION;
+			else
+				mode_i_next <= VECTORING;
+			end if;
+			
+			when ROTATION =>
+			if mode /= '0' then
+				mode_i_next <= INIT;
+			end if;
+			
+			when VECTORING =>
+			if mode /= '1' then
+				mode_i_next <= INIT;
+			end if;
+		end case;
+	end process next_mode_state;
+	
+	------------------------------------------------------------------------------------------------
+	-- next_configuration_state : 
+	------------------------------------------------------------------------------------------------
+	next_configuration_state : process (cordic_config_i_next, configuration_i_ff) is
+	begin
+		--configuration_i_next <= INIT;
+		configuration_i_next <= configuration_i_ff;
+		--configuration_i_next <= (others => 'X');
+		case configuration_i_ff is
+			when INIT =>
+			if cordic_config_i_next = CFG_INVERSE_TRIGONOMETRIC then
+				configuration_i_next <= INVERSE_TRIGONOMETRIC;
+			elsif cordic_config_i_next = CFG_HYPERBOLIC or cordic_config_i_next = CFG_HYPERBOLIC_EXT then
+				configuration_i_next <= HYPERBOLIC;
+			elsif cordic_config_i_next = CFG_CIRCULAR then
+				configuration_i_next <= CIRCULAR;
+			end if;
+			
+			when INVERSE_TRIGONOMETRIC =>
+			if cordic_config_i_next /= CFG_INVERSE_TRIGONOMETRIC then
+				configuration_i_next <= INIT;
+			end if;
+			
+			when HYPERBOLIC =>
+			if cordic_config_i_next /= CFG_HYPERBOLIC and cordic_config_i_next /= CFG_HYPERBOLIC_EXT then
+				configuration_i_next <= INIT;
+			end if;
+			
+			when CIRCULAR =>
+			if cordic_config_i_next /= CFG_CIRCULAR then
+				configuration_i_next <= INIT;
+			end if;
+		end case;
+	end process next_configuration_state;
+	
+	------------------------------------------------------------------------------------------------
+	-- state_memory : 
+	------------------------------------------------------------------------------------------------
+	state_memory : process (clk) is
+	begin
+		if rising_edge(clk) then
+			if rst_n = '0' then
+				mode_i_ff <= INIT;
+				configuration_i_ff <= INIT;
+			else
+				mode_i_ff <= mode_i_next;
+				cordic_config_i_ff <= cordic_config_i_next;
+				configuration_i_ff <= configuration_i_next;	
+			end if;
+		end if;
+	end process state_memory;
+	
+	------------------------------------------------------------------------------------------------
+	-- sync_pulse : 
+	------------------------------------------------------------------------------------------------
+	sync_pulse : process(clk)
+	begin
+		if rising_edge(clk) then
+			if rst_n = '0' then
+				valid <= '0';
+				clear_flag <= '0';
+				cnt_ff <= init_cnt;
+			else
+				if re_init = '1' then
+					clear_flag <= '0';
+					valid <= '0';
+					cnt_ff <= init_cnt;
+				elsif clear_flag = '0' then
+					if cnt_ff > 0 then
+						cnt_ff <= cnt_ff - 1;
+					else
+						clear_flag <= '1';
+						valid <= '1';
+					end if;
+				else
+					valid <= '0';	
+				end if;
+			end if;
+		end if;
+	end process sync_pulse;
+	
+	------------------------------------------------------------------------------------------------
+	-- pipeline_input : 
+	------------------------------------------------------------------------------------------------
+	pipeline_input : process (clk) is
+	begin
+		if rising_edge(clk) then
+			if rst_n = '0' then
+				x_i_hyperbolic_ff <= (others => '0');
+				y_i_hyperbolic_ff <= (others => '0');
+				z_i_hyperbolic_ff <= (others => '0');
+				
+				x_i_circular_ff <= (others => '0');
+				y_i_circular_ff <= (others => '0');
+				z_i_circular_ff <= (others => '0');
+				
+				t_i_inv_trig_ff <= (others => '0');
+				t_inv_trig_line(t_inv_trig_line'left)  <= (others => '0');
+			else
+				x_i_ff <= x_in;
+				y_i_ff <= y_in;
+				z_i_ff <= z_in;
+				
+				case configuration_i_ff is
+					when INVERSE_TRIGONOMETRIC =>
+					case mode_i_ff is
+						when ROTATION =>
+						t_i_inv_trig_ff <= t_i_inv_trig_ff1;
+						t_inv_trig_line(t_inv_trig_line'left) <= Range_Of_Convergence_t(z_i_ff);
+						
+						when others =>
+					end case;		
+					
+					when HYPERBOLIC =>
+					case mode_i_ff is
+						when ROTATION =>
+						x_i_hyperbolic_ff <= x_i_hyperbolic_rotation_ff;
+						y_i_hyperbolic_ff <= y_i_hyperbolic_rotation_ff;
+						z_i_hyperbolic_ff <= z_i_hyperbolic_rotation_ff;
+						
+						when VECTORING =>
+						x_i_hyperbolic_ff <= x_i_hyperbolic_vectoring_ff;
+						y_i_hyperbolic_ff <= y_i_hyperbolic_vectoring_ff;
+						z_i_hyperbolic_ff <= z_i_hyperbolic_vectoring_ff;
+						
+						when others =>
+					end case;
+					
+					when CIRCULAR =>
+					case mode_i_ff is
+						when ROTATION =>
+						x_i_circular_ff <= x_i_circular_rotation_ff;
+						y_i_circular_ff <= y_i_circular_rotation_ff;
+						z_i_circular_ff <= z_i_circular_rotation_ff;
+						
+						when VECTORING =>
+						x_i_circular_ff <= x_i_circular_vectoring_ff;
+						y_i_circular_ff <= y_i_circular_vectoring_ff;
+						z_i_circular_ff <= z_i_circular_vectoring_ff;
+						
+						when others =>
+					end case;
+					
+					when others =>
+				end case;
+			end if;
+		end if;
+	end process pipeline_input;
+	
+	------------------------------------------------------------------------------------------------
+	-- pipeline_output : 
+	------------------------------------------------------------------------------------------------
+	pipeline_output : process (clk) is
+	variable z_temp : Forbidden_Angle_t;
+	begin
+		if rising_edge(clk) then
+			if rst_n = '0' then
+				x_out <= (others => '0');
+				y_out <= (others => '0');
+				z_out <= (others => '0');
+			else
+				case configuration_i_ff is
+					when INVERSE_TRIGONOMETRIC =>
+					case mode_i_ff is
+						when ROTATION =>
+						z_temp := zc(ITERATION_NUM+1) sra 2;
+						if t_inv_trig_line(0) < 0.0 then
+							z_temp := sfixed(unsigned(to_slv(not z_temp)) + 1);
+						end if;
+						x_out <= to_slv(resize(MATH_PI/2.0-z_temp, z_temp));
+						y_out <= to_slv(z_temp);
+						z_out <= (others => '0');
+						
+						when others =>
+						x_out <= (others => '0');
+						y_out <= (others => '0');
+						z_out <= (others => '0');
+					end case;
+					
+					when HYPERBOLIC =>
+					case mode_i_ff is
+						when ROTATION =>
+						if cordic_config_i_ff = CFG_HYPERBOLIC then 
+							x_out <= to_slv(xh(ITERATION_NUM+1));
+							y_out <= to_slv(yh(ITERATION_NUM+1));	
+						else
+							x_out <= to_slv(zl(ITERATION_NUM+1));
+							y_out <= to_slv(y_s2(ITERATION_NUM+1));
+						end if;
+						z_out <= to_slv(zh(ITERATION_NUM+1));
+					
+						when others =>
+						x_out <= (others => '0');
+						y_out <= (others => '0');
+						z_out <= (others => '0');
+					end case;
+					
+					
+					when CIRCULAR =>
+					case mode_i_ff is
+						when ROTATION =>
+						x_out <= to_slv(xc(ITERATION_NUM+1));
+						y_out <= to_slv(yc(ITERATION_NUM+1));
+						z_out <= to_slv(zc(ITERATION_NUM+1));
+						
+						when others =>
+						x_out <= (others => '0');
+						y_out <= (others => '0');
+						z_out <= (others => '0');
+					end case;
+					
+					when others =>
+					x_out <= (others => '0');
+					y_out <= (others => '0');
+					z_out <= (others => '0');
+				end case;
+			end if;
+		end if;
+	end process pipeline_output;
+	
+	------------------------------------------------------------------------------------------------
+	-- init_inverse_trigonometric_configuration : 
+	------------------------------------------------------------------------------------------------
+	init_inverse_trigonometric_configuration : process(clk) is
+	variable z_temp : Range_Of_Convergence_t;
+	begin
+		if rising_edge(clk) then
+			if rst_n = '0' then
+				t_i_inv_trig_ff1 <= (others => '0');
+				t_inv_trig_line(t_inv_trig_line'left-1 downto 0) <= (others => (others => '0'));
+			else
+				case configuration_i_ff is
+					when INVERSE_TRIGONOMETRIC =>
+					case mode_i_ff is
+						when ROTATION =>
+						z_temp := Range_Of_Convergence_t(z_i_ff); 
+						if z_temp < 0.0 then
+							z_temp := sfixed(unsigned(not z_temp) + 1);
+						end if;
+						t_i_inv_trig_ff1 <= z_temp;
+						t_inv_trig_line(t_inv_trig_line'left-1 downto 0) <= t_inv_trig_line(t_inv_trig_line'left downto 1);
+						
+						when others =>
+						t_i_inv_trig_ff1 <= (others => '0');
+						t_inv_trig_line(t_inv_trig_line'left-1 downto 0) <= (others => (others => '0'));
+					end case;
+						
+					when others =>
+					t_i_inv_trig_ff1 <= (others => '0');
+					t_inv_trig_line(t_inv_trig_line'left-1 downto 0) <= (others => (others => '0'));
+				end case;
+			end if;
+		end if;
+	end process init_inverse_trigonometric_configuration;
+	
+	------------------------------------------------------------------------------------------------
+	-- init_hyperbolic_configuration : 
+	------------------------------------------------------------------------------------------------
+	init_hyperbolic_configuration : process(clk) is
+	begin
+		if rising_edge(clk) then
+			if rst_n = '0' then
+				x_i_hyperbolic_rotation_ff <= (others => '0');
+				y_i_hyperbolic_rotation_ff <= (others => '0');
+				z_i_hyperbolic_rotation_ff <= (others => '0');
+					
+				x_i_hyperbolic_vectoring_ff <= (others => '0');
+				y_i_hyperbolic_vectoring_ff <= (others => '0');
+				z_i_hyperbolic_vectoring_ff <= (others => '0');
+			else
+				case configuration_i_ff is
+					when HYPERBOLIC =>
+					case mode_i_ff is
+						when ROTATION =>
+						x_i_hyperbolic_rotation_ff <= SCALING_HYPERBOLIC;
+						y_i_hyperbolic_rotation_ff <= (others => '0');
+						z_i_hyperbolic_rotation_ff <= Hyperbolic_Angle_t(z_i_ff);
+						
+						when VECTORING =>
+						x_i_hyperbolic_vectoring_ff <= Hyperbolic_Coordinate_t(x_i_ff);
+						y_i_hyperbolic_vectoring_ff <= Hyperbolic_Coordinate_t(y_i_ff);
+						z_i_hyperbolic_vectoring_ff <= (others => '0');
+						
+						when others =>
+						x_i_hyperbolic_rotation_ff <= (others => '0');
+						y_i_hyperbolic_rotation_ff <= (others => '0');
+						z_i_hyperbolic_rotation_ff <= (others => '0');
+							
+						x_i_hyperbolic_vectoring_ff <= (others => '0');
+						y_i_hyperbolic_vectoring_ff <= (others => '0');
+						z_i_hyperbolic_vectoring_ff <= (others => '0');
+					end case;
+						
+					when others =>
+					x_i_hyperbolic_rotation_ff <= (others => '0');
+					y_i_hyperbolic_rotation_ff <= (others => '0');
+					z_i_hyperbolic_rotation_ff <= (others => '0');
+						
+					x_i_hyperbolic_vectoring_ff <= (others => '0');
+					y_i_hyperbolic_vectoring_ff <= (others => '0');
+					z_i_hyperbolic_vectoring_ff <= (others => '0');
+				end case;
+			end if;
+		end if;
+	end process init_hyperbolic_configuration;
+	
+	---------------------------------------------------------------------------------------------
+	-- initial_rotation: The input phase in assume to be unsigned and modulus 2*PI ([0, 2*PI[)
+	-- Shift the phase to for the nominal cordic convergence [-PI/2, PI/2]
+	----------------------------------------------------------------------------------------------
+	----------------------------------------------------------------------------------------------
+	-- initial_vectoring
+	-- Starts with a vector the x coordinate of which is positive and the y coordinate is arbitrary.
+	----------------------------------------------------------------------------------------------
+	--init_circular_configuration : process(clk) is
+--	variable swap, x_temp, y_temp, z_temp : Range_Of_Convergence_t;
+--	variable z_temp1 : Circular_Angle_t;
+--	begin
+--		if rising_edge(clk) then
+--			if rst_n = '0' then
+--				x_i_circular_rotation_ff <= (others => '0');
+--				y_i_circular_rotation_ff <= (others => '0');
+--				z_i_circular_rotation_ff <= (others => '0');
+--				
+--				x_i_circular_vectoring_ff <= (others => '0');
+--				y_i_circular_vectoring_ff <= (others => '0');
+--				z_i_circular_vectoring_ff <= (others => '0');
+--			else
+--				case configuration_i_ff is
+--					when CIRCULAR =>
+--					case mode_i_ff is
+--						when ROTATION =>
+--						x_temp := SCALING_NOMINAL;
+--						y_temp := (others => '0');
+--						z_temp := (others => '0');
+--						z_temp1 := Circular_Angle_t(z_in);
+--						
+--						-- [0,2*PI] -> [-PI/2, PI/2]
+--						if z_temp1 >= 0.0 and z_temp1 <= MATH_PI/2.0 then
+--							z_temp := Range_Of_Convergence_t(z_temp1 sll 1);
+--						elsif z_temp1 > MATH_PI/2.0 and z_temp1 < 3.0*MATH_PI/2.0 then
+--							x_temp := resize(-x_temp, x_temp);
+--							z_temp := resize(Forbidden_Angle_t(z_temp1 srl 1) - MATH_PI, z_temp);
+--						else -- z_temp1 > 3.0*MATH_PI/2.0
+--							z_temp := resize(Forbidden_Angle_t(z_temp1 srl 1) - 2.0*MATH_PI, z_temp);
+--						end if;
+--						
+--						--z_temp := z_temp1 sla 1;
+--						x_i_circular_rotation_ff <= x_temp;
+--						y_i_circular_rotation_ff <= y_temp;
+--						z_i_circular_rotation_ff <= z_temp;
+--						
+--						when VECTORING =>
+--						x_temp := Range_Of_Convergence_t(x_in);
+--						y_temp := Range_Of_Convergence_t(y_in);
+--						z_temp := (others => '0');
+--						if x_temp < 0.0 then
+--							if y_temp < 0.0 then
+--								swap := x_temp;
+--								x_temp := resize(-y_temp, x_temp);
+--								y_temp := resize(swap, y_temp);
+--								z_temp := resize(z_temp + MATH_PI/2.0, z_temp);
+--							else
+--								swap := x_temp;
+--								x_temp := resize(y_temp, x_temp);
+--								y_temp := resize(-swap, y_temp);
+--								z_temp := resize(z_temp - MATH_PI/2.0, z_temp);
+--							end if;	
+--						end if;
+--						x_i_circular_vectoring_ff <= x_temp;
+--						y_i_circular_vectoring_ff <= y_temp;
+--						z_i_circular_vectoring_ff <= z_temp;
+--						
+--						when others =>
+--						x_i_circular_rotation_ff <= (others => '0');
+--						y_i_circular_rotation_ff <= (others => '0');
+--						z_i_circular_rotation_ff <= (others => '0');
+--							
+--						x_i_circular_vectoring_ff <= (others => '0');
+--						y_i_circular_vectoring_ff <= (others => '0');
+--						z_i_circular_vectoring_ff <= (others => '0');
+--					end case;
+--						
+--					when others =>
+--					x_i_circular_rotation_ff <= (others => '0');
+--					y_i_circular_rotation_ff <= (others => '0');
+--					z_i_circular_rotation_ff <= (others => '0');
+--						
+--					x_i_circular_vectoring_ff <= (others => '0');
+--					y_i_circular_vectoring_ff <= (others => '0');
+--					z_i_circular_vectoring_ff <= (others => '0');
+--				end case;
+--			end if;
+--		end if;
+--	end process init_circular_configuration;
+	
+	---------------------------------------------------------------------------------------------
+	-- initial_rotation (angle compression): The input angle in assume to be unsigned and modulus 2*PI ([0, 2*PI[)
+	-- Compress the input angle to [-PI/10, PI/10] for double/ triple iteration
+	------------------------------------------------------------------------------------------------
+	----------------------------------------------------------------------------------------------
+	-- initial_vectoring
+	-- Starts with a vector the x coordinate of which is positive and the y coordinate is arbitrary.
+	----------------------------------------------------------------------------------------------
+	init_circular_configuration : process(clk) is
+	variable swap, x_temp, y_temp : Range_Of_Convergence_t;
+	variable z_temp : Compressed_Angle_t;
+	variable z_temp1 : Range_Of_Convergence_t;
+	variable z_temp2 : Circular_Angle_t;
+	variable B_x, B_y : Quadrant_Partition_LookUpTable_t;
+	begin
+		if rising_edge(clk) then
+			if rst_n = '0' then
+				x_i_circular_rotation_ff <= (others => '0');
+				y_i_circular_rotation_ff <= (others => '0');
+				z_i_circular_rotation_ff <= (others => '0');
+			else
+				case configuration_i_ff is
+					when CIRCULAR =>
+					case mode_i_ff is
+						when ROTATION =>
+						x_temp := (others => '0');
+						y_temp := (others => '0');
+						z_temp1 := (others => '0');
+						z_temp2 := Circular_Angle_t(z_i_ff);
+						
+						-- [0,2*PI] -> [-PI/2, PI/2]
+						if z_temp2 >= 0.0 and z_temp2 <= MATH_PI/2.0 then
+							z_temp1 := Range_Of_Convergence_t(z_temp2 sll 1);
+						elsif z_temp2 > MATH_PI/2.0 and z_temp2 < 3.0*MATH_PI/2.0 then
+							z_temp1 := resize(Forbidden_Angle_t(z_temp2 srl 1) - MATH_PI, z_temp1);
+						else -- z_temp2 >= 3.0*MATH_PI/2.0
+							z_temp1 := resize(Forbidden_Angle_t(z_temp2 srl 1) - 2.0*MATH_PI, z_temp1);
+						end if;
+						
+						-- [-PI/2, PI/2] -> [0, PI/2]
+						if z_temp1 >= -MATH_PI/2.0 and z_temp1 < 0.0 then
+							z_temp1 := resize(z_temp1 + MATH_PI/2.0, z_temp1);
+						end if;
+						
+						-- Identify the quadrant
+						if z_temp2 >= 0.0 and z_temp2 <= MATH_PI/2.0 then
+							B_x := Pos_Quad_Part_X;
+							B_y := Pos_Quad_Part_Y;
+						elsif z_temp2 > MATH_PI/2.0 and z_temp2 <= MATH_PI then
+							B_x := Neg_Quad_Part_Y;
+							B_y := Pos_Quad_Part_X;
+						elsif z_temp2 >= MATH_PI and z_temp2 < 3.0*MATH_PI/2.0 then
+							B_x := Neg_Quad_Part_X;
+							B_y := Neg_Quad_Part_Y;
+						else -- z_temp2 >= 3.0*MATH_PI/2.0 then
+							B_x := Pos_Quad_Part_Y;
+							B_y := Neg_Quad_Part_X;
+						end if;
+						
+						-- [0, PI/2] -> [0, PI/10]
+						if z_temp1 <= MATH_PI/10.0 then
+							x_temp := B_x(0);
+							y_temp := B_y(0);
+							--z_temp := z_temp1 sra 1;
+						elsif (z_temp1 > MATH_PI/10.0 and z_temp1 < 2.0*MATH_PI/10.0) then
+							x_temp := B_x(1);
+							y_temp := B_y(1);
+							z_temp1 := resize(z_temp1 - MATH_PI/10.0, z_temp1);
+						elsif (z_temp1 >= 2.0*MATH_PI/10.0 and z_temp1 <= 3.0*MATH_PI/10.0) then
+							x_temp := B_x(2);
+							y_temp := B_y(2);
+							z_temp1 := resize(z_temp1 - MATH_PI/5.0, z_temp1);
+						elsif (z_temp1 > 3.0*MATH_PI/10.0 and z_temp1 < 4.0*MATH_PI/10.0) then
+							x_temp := B_x(3);
+							y_temp := B_y(3);
+							z_temp1 := resize(z_temp1 - 3.0*MATH_PI/10.0, z_temp1);
+						else -- (z_temp1 >= 4.0*MATH_PI/5.0 and z_temp1 <= 5.0*MATH_PI/10.0) then
+							x_temp := B_x(4);
+							y_temp := B_y(4);
+							z_temp1 := resize(z_temp1 - 2.0*MATH_PI/5.0, z_temp1);
+						end if;
+						
+						--z_temp := z_temp1 sla 1;
+						x_i_circular_rotation_ff <= x_temp;
+						y_i_circular_rotation_ff <= y_temp;
+						z_i_circular_rotation_ff <= z_temp1;
+						
+						when VECTORING =>
+						x_temp := Range_Of_Convergence_t(x_i_ff);
+						y_temp := Range_Of_Convergence_t(y_i_ff);
+						z_temp1 := (others => '0');
+						if x_temp < 0.0 then
+							if y_temp < 0.0 then
+								swap := x_temp;
+								x_temp := resize(-y_temp, x_temp);
+								y_temp := resize(swap, y_temp);
+								z_temp1 := resize(z_temp1 + MATH_PI/2.0, z_temp1);
+							else
+								swap := x_temp;
+								x_temp := resize(y_temp, x_temp);
+								y_temp := resize(-swap, y_temp);
+								z_temp1 := resize(z_temp1 - MATH_PI/2.0, z_temp1);
+							end if;	
+						end if;
+						x_i_circular_vectoring_ff <= x_temp;
+						y_i_circular_vectoring_ff <= y_temp;
+						z_i_circular_vectoring_ff <= z_temp1;
+						
+						when others =>
+						x_i_circular_rotation_ff <= (others => '0');
+						y_i_circular_rotation_ff <= (others => '0');
+						z_i_circular_rotation_ff <= (others => '0');
+							
+						x_i_circular_vectoring_ff <= (others => '0');
+						y_i_circular_vectoring_ff <= (others => '0');
+						z_i_circular_vectoring_ff <= (others => '0');
+					end case;
+						
+					when others =>
+					x_i_circular_rotation_ff <= (others => '0');
+					y_i_circular_rotation_ff <= (others => '0');
+					z_i_circular_rotation_ff <= (others => '0');
+						
+					x_i_circular_vectoring_ff <= (others => '0');
+					y_i_circular_vectoring_ff <= (others => '0');
+					z_i_circular_vectoring_ff <= (others => '0');
+				end case;
+			end if;
+		end if;
+	end process init_circular_configuration;
+	
+	------------------------------------------------------------------------------------------------
+	-- unified_cordic : 
+	------------------------------------------------------------------------------------------------
+	unified_cordic : process(clk) is
+	variable xtmp, xtemp, ytemp : Hyperbolic_Coordinate_t;
+	variable ztemp : Hyperbolic_Angle_t;
+	begin
+		if rising_edge(clk) then
+			if rst_n = '0' then
+				xh <= (others => (others => '0'));
+				yh <= (others => (others => '0'));
+				zh <= (others => (others => '0'));
+				
+				xc <= (others => (others => '0'));
+				yc <= (others => (others => '0'));
+				zc <= (others => (others => '0'));
+			else
+				case configuration_i_ff is
+					when INVERSE_TRIGONOMETRIC =>
+					case mode_i_ff  is
+						when ROTATION =>
+						xc(EXPANSION_RANGE) <= to_sfixed(1.0, xc(EXPANSION_RANGE));
+						yc(EXPANSION_RANGE) <= to_sfixed(0.0, yc(EXPANSION_RANGE));
+						zc(EXPANSION_RANGE) <= (others => '0');
+						tc(EXPANSION_RANGE) <= t_i_inv_trig_ff;
+						generate_inv_trig_pipeline : for i in EXPANSION_RANGE to ITERATION_NUM loop
+							if i <= 0 then
+								xc(i+1) <= xc(i);
+								yc(i+1) <= yc(i);
+								zc(i+1) <= zc(i);
+								tc(i+1) <= tc(i);
+							else
+								if xc(i) < 0.0 or yc(i) > tc(i) then
+									xc(i+1) <= resize(xc(i) - shift_right(xc(i), 2*i) + shift_right(yc(i), i-1), xc(i+1));
+									yc(i+1) <= resize(yc(i) - shift_right(yc(i), 2*i) - shift_right(xc(i), i-1), yc(i+1));
+									zc(i+1) <= resize(zc(i) - shift_left(Arctan_LookUpTable(i), 1), zc(i+1));
+								else
+									xc(i+1) <= resize(xc(i) - shift_right(xc(i), 2*i) - shift_right(yc(i), i-1), xc(i+1));
+									yc(i+1) <= resize(yc(i) - shift_right(yc(i), 2*i) + shift_right(xc(i), i-1), yc(i+1));
+									zc(i+1) <= resize(zc(i) + shift_left(Arctan_LookUpTable(i), 1), zc(i+1));
+								end if;
+								tc(i+1) <= resize(tc(i) + shift_right(tc(i), 2*i), tc(i+1));
+							end if;
+				        end loop generate_inv_trig_pipeline;
+						
+						when others =>
+						xc <= (others => (others => '0'));
+						yc <= (others => (others => '0'));
+						zc <= (others => (others => '0'));
+					end case;
+		
+					when HYPERBOLIC =>
+					xh(EXPANSION_RANGE) <= x_i_hyperbolic_ff;
+					yh(EXPANSION_RANGE) <= y_i_hyperbolic_ff;
+					zh(EXPANSION_RANGE) <= z_i_hyperbolic_ff;
+					case mode_i_ff  is
+						when ROTATION =>
+						generate_hyperbolic_pipeline_rotation : for i in EXPANSION_RANGE to ITERATION_NUM loop
+							if i <= 0 then
+								if zh(i) < 0.0  then
+									xh(i+1) <= resize(xh(i) - yh(i) + shift_right(yh(i), -(i-2)), xh(i+1));
+									yh(i+1) <= resize(yh(i) - xh(i) + shift_right(xh(i), -(i-2)), yh(i+1));
+									zh(i+1) <= resize(zh(i) + Arctan_Hyperbolic_LookUpTable(i), zh(i+1));
+								else
+									xh(i+1) <= resize(xh(i) + yh(i) - shift_right(yh(i), -(i-2)), xh(i+1));
+									yh(i+1) <= resize(yh(i) + xh(i) - shift_right(xh(i), -(i-2)), yh(i+1));
+									zh(i+1) <= resize(zh(i) - Arctan_Hyperbolic_LookUpTable(i), zh(i+1));
+								end if;
+							else
+								if zh(i) < 0.0  then
+									xtemp := resize(xh(i) - shift_right(yh(i), i), xh(i+1));
+									ytemp := resize(yh(i) - shift_right(xh(i), i), yh(i+1));
+									ztemp := resize(zh(i) + Arctan_Hyperbolic_LookUpTable(i), zh(i+1));
+								else
+									xtemp := resize(xh(i) + shift_right(yh(i), i), xh(i+1));
+									ytemp := resize(yh(i) + shift_right(xh(i), i), yh(i+1));
+									ztemp := resize(zh(i) - Arctan_Hyperbolic_LookUpTable(i), zh(i+1));
+								end if;
+								if ((i = 4) or (i = 13) or (i = 40) or (i = 121)) then
+									xtmp := xtemp;
+									if ztemp < 0.0 then
+										xtemp := resize(xtemp - shift_right(ytemp, i), xtemp);
+										ytemp := resize(ytemp - shift_right(xtmp, i), ytemp);
+										ztemp := resize(ztemp + Arctan_Hyperbolic_LookUpTable(i), ztemp);
+									else
+										xtemp := resize(xtemp + shift_right(ytemp, i), xtemp);
+										ytemp := resize(ytemp + shift_right(xtmp, i), ytemp);
+										ztemp := resize(ztemp - Arctan_Hyperbolic_LookUpTable(i), ztemp);
+									end if;
+								end if;
+								xh(i+1) <= xtemp;
+								yh(i+1) <= ytemp;
+								zh(i+1) <= ztemp;
+							end if;
+						end loop generate_hyperbolic_pipeline_rotation;
+					
+						when others =>
+						xh <= (others => (others => '0'));
+						yh <= (others => (others => '0'));
+						zh <= (others => (others => '0'));
+					end case;
+					
+					when CIRCULAR =>
+					xc(EXPANSION_RANGE) <= x_i_circular_ff;
+					yc(EXPANSION_RANGE) <= y_i_circular_ff;
+					zc(EXPANSION_RANGE) <= z_i_circular_ff;
+					case mode_i_ff is
+						when ROTATION =>
+						generate_circular_pipeline_rotation : for i in EXPANSION_RANGE to ITERATION_NUM loop
+							if i < 0 then
+								xc(i+1) <= xc(i);
+								yc(i+1) <= yc(i);
+								zc(i+1) <= zc(i);
+							else
+								if zc(i) >= 0.0  then
+									xc(i+1) <= resize(xc(i) - shift_right(yc(i), i), xc(i+1));
+									yc(i+1) <= resize(yc(i) + shift_right(xc(i), i), yc(i+1));
+									zc(i+1) <= resize(zc(i) - Arctan_LookUpTable(i), zc(i+1));
+								else
+									xc(i+1) <= resize(xc(i) + shift_right(yc(i), i), xc(i+1));
+									yc(i+1) <= resize(yc(i) - shift_right(xc(i), i), yc(i+1));
+									zc(i+1) <= resize(zc(i) + Arctan_LookUpTable(i), zc(i+1));
+								end if;
+							end if;
+				        end loop generate_circular_pipeline_rotation;
+							
+						when VECTORING =>	
+						generate_circular_pipeline_vectoring : for i in EXPANSION_RANGE to ITERATION_NUM loop
+							if i < 0 then
+								xc(i+1) <= xc(i);
+								yc(i+1) <= yc(i);
+								zc(i+1) <= zc(i);
+							else
+								if yc(i) < 0.0  then
+									xc(i+1) <= resize(xc(i) - shift_right(yc(i), i), xc(i+1));
+									yc(i+1) <= resize(yc(i) + shift_right(xc(i), i), yc(i+1));
+									zc(i+1) <= resize(zc(i) - Arctan_LookUpTable(i), zc(i+1));
+				            	else
+									xc(i+1) <= resize(xc(i) + shift_right(yc(i), i), xc(i+1));
+									yc(i+1) <= resize(yc(i) - shift_right(xc(i), i), yc(i+1));
+									zc(i+1) <= resize(zc(i) + Arctan_LookUpTable(i), zc(i+1));
+								end if;
+							end if;
+						end loop generate_circular_pipeline_vectoring;
+						
+						when others =>
+						xc <= (others => (others => '0'));
+						yc <= (others => (others => '0'));
+						zc <= (others => (others => '0'));
+					end case;
+					
+					when others =>
+					xh <= (others => (others => '0'));
+					yh <= (others => (others => '0'));
+					zh <= (others => (others => '0'));
+					
+					xc <= (others => (others => '0'));
+					yc <= (others => (others => '0'));
+					zc <= (others => (others => '0'));
+				end case;
+			end if;
+		end if;
+	end process unified_cordic;
+	
+	------------------------------------------------------------------------------------------------
+	-- sech_gen : 
+	------------------------------------------------------------------------------------------------
+	sech_gen : process(clk) is
+	begin
+		if rising_edge(clk) then
+			if rst_n = '0' then
+				xl <= (others => (others => '0'));
+				yl <= (others => (others => '0'));
+				zl <= (others => (others => '0'));
+			else
+				case configuration_i_ff is
+					when HYPERBOLIC =>
+					case mode_i_ff is
+						when ROTATION =>
+						-- zl(ITERATION_NUM+1) <= yl(0) / xl(0)
+						xl(0) <= xh(ITERATION_NUM+1);
+						yl(0) <= to_sfixed(1.0, yl(EXPANSION_RANGE)); 
+						zl(0) <= (others => '0');
+						generate_linear_pipeline_sech : for i in 0 to ITERATION_NUM loop
+							if yl(i) < 0.0  then
+								xl(i+1) <= xl(i);
+								yl(i+1) <= resize(yl(i) + shift_right(xl(i), i), yl(i+1));
+								zl(i+1) <= resize(zl(i) - Power_of_2_LookUpTable(i), zl(i+1));
+							else
+								xl(i+1) <= xl(i);
+								yl(i+1) <= resize(yl(i) - shift_right(xl(i), i), yl(i+1));
+								zl(i+1) <= resize(zl(i) + Power_of_2_LookUpTable(i), zl(i+1));
+							end if;
+				        end loop generate_linear_pipeline_sech;
+						
+						when others =>
+						xl <= (others => (others => '0'));
+						yl <= (others => (others => '0'));
+						zl <= (others => (others => '0'));
+					end case;
+						
+					when others =>
+					xl <= (others => (others => '0'));
+					yl <= (others => (others => '0'));
+					zl <= (others => (others => '0'));
+				end case;
+			end if;
+		end if;
+	end process sech_gen;
+	
+	------------------------------------------------------------------------------------------------
+	-- sech_2_gen : 
+	------------------------------------------------------------------------------------------------
+	sech_2_gen : process(clk) is
+	begin
+		if rising_edge(clk) then
+			if rst_n = '0' then
+				x_s2 <= (others => (others => '0'));
+				y_s2 <= (others => (others => '0'));
+				z_s2 <= (others => (others => '0'));
+			else
+				case configuration_i_ff is
+					when HYPERBOLIC =>
+					case mode_i_ff is
+						when ROTATION =>
+						-- y_s2(ITERATION_NUM+1) <= x_s2(0) * z_s2(0)
+						x_s2(0) <= zl(ITERATION_NUM+1);
+						y_s2(0) <= (others => '0'); 
+						z_s2(0) <= zl(ITERATION_NUM+1);
+						generate_linear_pipeline_sech_2 : for i in 0 to ITERATION_NUM loop
+							if z_s2(i) >= 0.0  then
+								x_s2(i+1) <= x_s2(i);
+								y_s2(i+1) <= resize(y_s2(i) + shift_right(x_s2(i), i), y_s2(i+1));
+								z_s2(i+1) <= resize(z_s2(i) - Power_of_2_LookUpTable(i), z_s2(i+1));
+							else
+								x_s2(i+1) <= x_s2(i);
+								y_s2(i+1) <= resize(y_s2(i) - shift_right(x_s2(i), i), y_s2(i+1));
+								z_s2(i+1) <= resize(z_s2(i) + Power_of_2_LookUpTable(i), z_s2(i+1));
+							end if;
+				        end loop generate_linear_pipeline_sech_2;
+						
+						when others =>
+						x_s2 <= (others => (others => '0'));
+						y_s2 <= (others => (others => '0'));
+						z_s2 <= (others => (others => '0'));
+					end case;
+						
+					when others =>
+					x_s2 <= (others => (others => '0'));
+					y_s2 <= (others => (others => '0'));
+					z_s2 <= (others => (others => '0'));
+				end case;
+			end if;
+		end if;
+	end process sech_2_gen;
+end pipelined_arch;

@@ -1,0 +1,37 @@
+use work.cordic_types.all;
+use work.dsm_pkg.all;
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.math_real.all;
+use ieee.numeric_std.all;
+use ieee.fixed_pkg.all;
+
+ENTITY quantizer IS
+  PORT( u : IN  dsm_t;
+        y : OUT dsm_t
+        );
+END quantizer;
+
+ARCHITECTURE rtl OF quantizer IS
+
+BEGIN
+	even_quantizer_proc: process(u) is
+	constant st : integer := nLev - 2;
+	begin
+		y <= to_sfixed(0, u);
+		if u < to_sfixed(-st, u) then
+			y <= to_sfixed(-nLev+1, u);
+		elsif u >= to_sfixed(st, u) then
+			y <= to_sfixed(nLev-1, u);
+		else
+			if nLev > 2 then
+				for n in 1 to nLev-2 loop
+					if (u >= to_sfixed(-nLev + 2*n, u)) and (u < to_sfixed(-nLev + 2*(n+1), u)) then
+						y <= to_sfixed(2*n-1-nLev, u);
+					end if;
+				end loop;
+			end if;
+		end if;
+	end process even_quantizer_proc;
+END rtl;

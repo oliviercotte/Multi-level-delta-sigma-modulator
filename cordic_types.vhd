@@ -1,0 +1,340 @@
+--------------------------------------------------------------------------------
+-- Filename: cordic_types.vhd
+-- Author: Olivier Cotte
+-- Date: Jan-2017
+-- Description:
+--------------------------------------------------------------------------------
+
+library ieee;
+use ieee.numeric_std.all;
+use ieee.std_logic_1164.all;
+use ieee.math_real.all;
+use ieee.fixed_pkg.all;
+
+package cordic_types is
+	-- SET THE PRECISION -- 
+	constant BIT_WIDTH: positive := 34;
+	constant ITERATION_NUM : positive := BIT_WIDTH - 2;
+	
+	-- INTEGER WORD LENGTH --
+	constant Hyperbolic_Coordinate_IWL : integer := 7; 
+	constant Circular_Coordinate_IWL : integer := 0; 
+	constant Linear_Coordinate_IWL : integer := 1; 
+	
+	constant Hyperbolic_Angle_IWL : integer := 3; 
+	constant Circular_Angle_IWL : integer := 2; 
+	constant Forbidden_Angle_IWL : integer := 3; 
+	constant Range_Of_Convergence_IWL : integer := 1; 
+	constant Compressed_Angle_IWL : integer := 0; 
+	
+	-- FLOATING WORD LENGTH
+	constant Hyperbolic_Coordinate_FWL : integer := Hyperbolic_Coordinate_IWL+(1-BIT_WIDTH);
+	constant Circular_Coordinate_FWL : integer := Circular_Coordinate_IWL+(1-BIT_WIDTH);
+	constant Linear_Coordinate_FWL : integer := Linear_Coordinate_IWL+(1-BIT_WIDTH);
+	
+	constant Hyperbolic_Angle_FWL : integer := Hyperbolic_Angle_IWL+(1-BIT_WIDTH);
+	constant Circular_Angle_FWL : integer := Circular_Angle_IWL+(1-BIT_WIDTH);
+	constant Forbidden_Angle_FWL : integer := Forbidden_Angle_IWL+(1-BIT_WIDTH);
+	constant Range_Of_Convergence_FWL : integer := Range_Of_Convergence_IWL+(1-BIT_WIDTH);
+	constant Compressed_Angle_FWL : integer := Compressed_Angle_IWL+(1-BIT_WIDTH);
+	
+	-- CORDIC DATA TYPES --
+	subtype Hyperbolic_Coordinate_t is sfixed(Hyperbolic_Coordinate_IWL downto Hyperbolic_Coordinate_FWL); -- [-256.0, 256.0[ 
+	subtype Circular_Coordinate_t is sfixed(Circular_Coordinate_IWL downto Circular_Coordinate_FWL); -- [-1.0, 1.0[ 
+	subtype Linear_Coordinate_t is sfixed(Linear_Coordinate_IWL downto Linear_Coordinate_FWL); -- [-2.0, 2.0[ 
+	
+	subtype Hyperbolic_Angle_t is sfixed(Hyperbolic_Angle_IWL downto Hyperbolic_Angle_FWL); -- [-8, 8[ => [-6.0, 6.0] 
+	subtype Circular_Angle_t is ufixed(Circular_Angle_IWL downto Circular_Angle_FWL);  -- [0, 7[ => [0, 2*pi]
+	subtype Forbidden_Angle_t is sfixed(Forbidden_Angle_IWL downto Forbidden_Angle_FWL);  -- [-8, 8[ => [-3*pi/2, 3*pi/2]
+	subtype Range_Of_Convergence_t is sfixed(Range_Of_Convergence_IWL downto Range_Of_Convergence_FWL); -- [-2.0, 2.0[ => [-pi/2, pi/2]
+	subtype Compressed_Angle_t is sfixed(Compressed_Angle_IWL downto Compressed_Angle_FWL); -- [-1.0, 1.0[ => [0, pi/10] 
+	
+	-- DDFS PARAMS --
+	constant fout : real := 2.25;
+	constant fref : real := 122.88;
+
+	-- CORDIC ALGORITHMS PARAMETERS --
+	constant EXPANSION_RANGE : integer := -2;
+	constant SEND_SYNC_PULSE_UNROLLED : positive := 1+1+1;
+	constant SEND_SYNC_PULSE_PIPELINED_NOMINAL : positive := SEND_SYNC_PULSE_UNROLLED+(ITERATION_NUM+1)-EXPANSION_RANGE;
+	constant SEND_SYNC_PULSE_PIPELINED_EXT_SECH : positive := SEND_SYNC_PULSE_UNROLLED+2*(ITERATION_NUM+1)-EXPANSION_RANGE;
+	constant SEND_SYNC_PULSE_PIPELINED_EXT_SECH_2 : positive := SEND_SYNC_PULSE_UNROLLED+3*(ITERATION_NUM+1)-EXPANSION_RANGE;
+	
+	
+	-- DDFS DATA TYPES --
+	subtype cordic_config_t is integer range 0 to 7;
+	constant CFG_INVERSE_TRIGONOMETRIC : cordic_config_t := 7;
+	constant CFG_CIRCULAR : cordic_config_t  := 6;
+	constant CFG_LINEAR : cordic_config_t  :=  5;
+	constant CFG_HYPERBOLIC : cordic_config_t  := 4;
+	constant CFG_HYPERBOLIC_EXT : cordic_config_t  := 3;
+	
+	subtype ddfs_function_t is integer range 0 to 8;
+	constant COSINE : ddfs_function_t := 0;
+	constant SINE : ddfs_function_t := 1;
+	constant ARCCOSINE : ddfs_function_t := 2;
+	constant ARCSINE : ddfs_function_t := 3;
+	constant COSINE_H : ddfs_function_t := 4;
+	constant SINE_H : ddfs_function_t := 5;
+	constant EXPONENTIAL : ddfs_function_t := 6;
+	constant SEC_H : ddfs_function_t := 7;
+	constant GEN_SOLITON_SHAPE : ddfs_function_t := 8;
+	
+	-- SCALING FACTOR --
+	function Compute_Scaling_Original_Hyperbolic return real;
+	function Compute_Scaling_Extended_Hyperbolic return real;
+	function Compute_Scaling_Nominal return real;
+	
+	-- RANGE OF CONVERGENCE --
+	function Compute_ROC_Original_Hyperbolic return real;
+	function Compute_ROC_Extended_Hyperbolic return real;
+	function Compute_ROC_Nominal return real;
+	function Compute_ROC_Linear return real;
+	
+	-- LOOKUP TABLE GENERATION -- 
+	subtype Hyperbolic_LookUpTable_word is Hyperbolic_Angle_t;
+	subtype Circular_LookUpTable_word is Range_Of_Convergence_t;
+	subtype Linear_LookUpTable_word is Range_Of_Convergence_t;
+	
+	type Hyperbolic_LookUpTable_t is array (EXPANSION_RANGE to ITERATION_NUM) of Hyperbolic_LookUpTable_word;
+	type Circular_LookUpTable_t is array (0 to ITERATION_NUM) of Circular_LookUpTable_word;
+	type Linear_LookUpTable_t is array (0 to ITERATION_NUM) of Linear_LookUpTable_word;
+	
+	function Generate_Arctan_Hyperbolic_LookUpTable return Hyperbolic_LookUpTable_t;
+	function Generate_Arctan_LookUpTable return Circular_LookUpTable_t;
+	function Generate_Power_of_2_LookUpTable return Linear_LookUpTable_t;
+	
+	-- CORDIC SPECIFIC CONSTANTS --
+	constant K_Nominal : real;
+	constant K_Original_Hyperbolic : real;
+	constant K_Extended_Hyperbolic : real;
+	constant K_Hyperbolic : real;
+	
+	constant ROC_Original_Hyperbolic : real;
+	constant ROC_Extended_Hyperbolic : real;
+	constant ROC_Nominal : real;
+	constant ROC_Linear : real;
+	
+	constant Arctan_LookUpTable : Circular_LookUpTable_t;
+	constant Arctan_Hyperbolic_LookUpTable : Hyperbolic_LookUpTable_t;
+	constant Power_of_2_LookUpTable : Linear_LookUpTable_t;
+	
+	constant SCALING_NOMINAL : Hyperbolic_Coordinate_t;
+	constant SCALING_HYPERBOLIC : Hyperbolic_Coordinate_t;
+
+	-- ANGLE SHIFT (COMPRESSION) FUNCTIONS --
+	subtype Quadrant_Partition_Angle_t is Range_Of_Convergence_t;
+	type Quadrant_Partition_LookUpTable_t is array (0 to 4) of Quadrant_Partition_Angle_t;
+	constant Quad_Delimiter : real := MATH_PI/10.0;
+	
+	function Gen_Pos_Quad_Part_X return Quadrant_Partition_LookUpTable_t;
+	function Gen_Pos_Quad_Part_Y return Quadrant_Partition_LookUpTable_t;
+	function Gen_Neg_Quad_Part_X return Quadrant_Partition_LookUpTable_t;
+	function Gen_Neg_Quad_Part_Y return Quadrant_Partition_LookUpTable_t;
+	
+	constant Pos_Quad_Part_X : Quadrant_Partition_LookUpTable_t;
+	constant Pos_Quad_Part_Y : Quadrant_Partition_LookUpTable_t;
+	constant Neg_Quad_Part_X : Quadrant_Partition_LookUpTable_t;
+	constant Neg_Quad_Part_Y : Quadrant_Partition_LookUpTable_t;
+end cordic_types;
+
+package body cordic_types is
+	------------------------------------------------------------------------------------------------
+	-- Compute_Scaling_Nominal : 
+	------------------------------------------------------------------------------------------------
+	function Compute_Scaling_Nominal return real is
+	variable K: real := 1.0;
+	begin
+		for i in 0 to ITERATION_NUM-1 loop
+			K := K * sqrt( 1.0 / (1.0 + 2.0 ** (-2*i)) );
+		end loop;
+		return K;
+	end function Compute_Scaling_Nominal;
+	
+	------------------------------------------------------------------------------------------------
+	-- Compute_Scaling_Original_Hyperbolic : 
+	------------------------------------------------------------------------------------------------
+	function Compute_Scaling_Original_Hyperbolic return real is
+	variable K: real := 1.0;
+	begin
+		for i in 1 to ITERATION_NUM loop
+			K := K * sqrt( 1.0 / ( 1.0 - 2.0 ** (-2*i) ) );
+		end loop;
+		return K;
+	end function Compute_Scaling_Original_Hyperbolic;
+	
+	------------------------------------------------------------------------------------------------
+	-- Compute_Scaling_Extended_Hyperbolic : 
+	------------------------------------------------------------------------------------------------
+	function Compute_Scaling_Extended_Hyperbolic return real is
+	variable K: real := 1.0;
+	begin
+		for i in EXPANSION_RANGE to 0 loop
+			K := K * sqrt( 1.0 / ( 1.0 - ( 1.0 - 2.0 ** (i-2) ) ** 2.0 ) );
+		end loop;
+		return K;
+	end function Compute_Scaling_Extended_Hyperbolic;
+	
+	------------------------------------------------------------------------------------------------
+	-- Compute_ROC_Original_Hyperbolic : 
+	------------------------------------------------------------------------------------------------
+	function Compute_ROC_Original_Hyperbolic return real is
+	variable ROC: real := arctanh(2.0 ** (-ITERATION_NUM));
+	begin
+		for i in 1 to ITERATION_NUM loop
+			ROC := ROC + arctanh(2.0 ** (-i));
+		end loop;
+		return ROC;
+	end function Compute_ROC_Original_Hyperbolic; 
+	
+	------------------------------------------------------------------------------------------------
+	-- Compute_ROC_Extended_Hyperbolic : 
+	------------------------------------------------------------------------------------------------
+	function Compute_ROC_Extended_Hyperbolic return real is
+	variable ROC: real := arctanh(2.0 ** (-ITERATION_NUM));
+	begin
+		for i in EXPANSION_RANGE to ITERATION_NUM loop
+			if i <= 0 then
+				ROC := ROC + arctanh(1.0 - 2.0 ** (i-2));
+			else
+				ROC := ROC + arctanh(2.0 ** (-i));
+			end if;
+		end loop;
+		return ROC;
+	end function Compute_ROC_Extended_Hyperbolic;
+	
+	------------------------------------------------------------------------------------------------
+	-- Compute_ROC_Nominal : 
+	------------------------------------------------------------------------------------------------
+	function Compute_ROC_Nominal return real is
+	variable ROC: real := arctan(2.0 ** (-ITERATION_NUM));
+	begin
+		for i in 0 to ITERATION_NUM-1 loop
+			ROC := ROC + arctan(2.0 ** (-i));
+		end loop;
+		return ROC;
+	end function Compute_ROC_Nominal;
+	
+	------------------------------------------------------------------------------------------------
+	-- Compute_ROC_Linear : 
+	------------------------------------------------------------------------------------------------
+	function Compute_ROC_Linear return real is
+	variable ROC: real := 2.0 ** (-ITERATION_NUM);
+	begin
+		for i in 0 to ITERATION_NUM-1 loop
+			ROC := ROC + 2.0 ** (-i);
+		end loop;
+		return ROC;
+	end function Compute_ROC_Linear;
+	
+	------------------------------------------------------------------------------------------------
+	-- Generate_Arctan_Hyperbolic_LookUpTable : 
+	------------------------------------------------------------------------------------------------
+	function Generate_Arctan_Hyperbolic_LookUpTable return Hyperbolic_LookUpTable_t is
+	variable Arctan_Hyperbolic_LookUpTable : Hyperbolic_LookUpTable_t := (others => (others => '0'));
+	begin
+		for i in Arctan_Hyperbolic_LookUpTable'range loop
+			if i <= 0 then
+				Arctan_Hyperbolic_LookUpTable(i) := to_sfixed( arctanh(1.0 - 2.0 ** (i-2)), Hyperbolic_LookUpTable_word'left, Hyperbolic_LookUpTable_word'right );
+			else
+				Arctan_Hyperbolic_LookUpTable(i) := to_sfixed( arctanh(2.0 ** (-i)), Hyperbolic_LookUpTable_word'left, Hyperbolic_LookUpTable_word'right );  
+			end if;
+		end loop;
+	return Arctan_Hyperbolic_LookUpTable;
+	end function Generate_Arctan_Hyperbolic_LookUpTable;
+	
+	------------------------------------------------------------------------------------------------
+	-- Generate_Arctan_LookUpTable : 
+	------------------------------------------------------------------------------------------------
+	function Generate_Arctan_LookUpTable return Circular_LookUpTable_t is
+	variable Arctan_LookUpTable : Circular_LookUpTable_t := (others => (others => '0'));
+	begin
+		for i in Arctan_LookUpTable'range loop
+			Arctan_LookUpTable(i) := to_sfixed( arctan(2.0**(-i)), Circular_LookUpTable_word'left, Circular_LookUpTable_word'right );  
+		end loop;
+	return Arctan_LookUpTable;
+	end function Generate_Arctan_LookUpTable;
+	
+	------------------------------------------------------------------------------------------------
+	-- Generate_Power_of_2_LookUpTable : 
+	------------------------------------------------------------------------------------------------
+	function Generate_Power_of_2_LookUpTable return Linear_LookUpTable_t is
+	variable Power_of_2_LookUpTable : Linear_LookUpTable_t := (others => (others => '0'));
+	begin
+		for i in Power_of_2_LookUpTable'range loop
+			Power_of_2_LookUpTable(i) := to_sfixed( 2.0 ** (-i), Linear_LookUpTable_word'left, Linear_LookUpTable_word'right );  
+		end loop;
+	return Power_of_2_LookUpTable;
+	end function Generate_Power_of_2_LookUpTable;
+	
+	------------------------------------------------------------------------------------------------
+	-- Gen_Pos_Quad_Part_X : 
+	------------------------------------------------------------------------------------------------
+	function Gen_Pos_Quad_Part_X return Quadrant_Partition_LookUpTable_t is
+	variable Quadrant_Partition : Quadrant_Partition_LookUpTable_t;
+	begin
+		for i in Quadrant_Partition'range loop
+			Quadrant_Partition(i) := to_sfixed(cos(real(i)*Quad_Delimiter)*K_Nominal, Quadrant_Partition_Angle_t'left, Quadrant_Partition_Angle_t'right);
+		end loop;
+		return Quadrant_Partition;
+	end Gen_Pos_Quad_Part_X;
+	
+	------------------------------------------------------------------------------------------------
+	-- Gen_Pos_Quad_Part_Y : 
+	------------------------------------------------------------------------------------------------
+	function Gen_Pos_Quad_Part_Y return Quadrant_Partition_LookUpTable_t is
+	variable Quadrant_Partition : Quadrant_Partition_LookUpTable_t;
+	begin
+		for i in Quadrant_Partition'range loop
+			Quadrant_Partition(i) := to_sfixed(sin(real(i)*Quad_Delimiter)*K_Nominal, Quadrant_Partition_Angle_t'left, Quadrant_Partition_Angle_t'right);
+		end loop;
+		return Quadrant_Partition;
+	end Gen_Pos_Quad_Part_Y;
+	
+	------------------------------------------------------------------------------------------------
+	-- Gen_Neg_Quad_Part_X : 
+	------------------------------------------------------------------------------------------------
+	function Gen_Neg_Quad_Part_X return Quadrant_Partition_LookUpTable_t is
+	variable Quadrant_Partition : Quadrant_Partition_LookUpTable_t;
+	begin
+		for i in Quadrant_Partition'range loop
+			Quadrant_Partition(i) := to_sfixed(-cos(real(i)*Quad_Delimiter)*K_Nominal, Quadrant_Partition_Angle_t'left, Quadrant_Partition_Angle_t'right);
+		end loop;
+		return Quadrant_Partition;
+	end Gen_Neg_Quad_Part_X;
+	
+	------------------------------------------------------------------------------------------------
+	-- Gen_Neg_Quad_Part_Y : 
+	------------------------------------------------------------------------------------------------
+	function Gen_Neg_Quad_Part_Y return Quadrant_Partition_LookUpTable_t is
+	variable Quadrant_Partition : Quadrant_Partition_LookUpTable_t;
+	begin
+		for i in Quadrant_Partition'range loop
+			Quadrant_Partition(i) := to_sfixed(-sin(real(i)*Quad_Delimiter)*K_Nominal, Quadrant_Partition_Angle_t'left, Quadrant_Partition_Angle_t'right);
+		end loop;
+		return Quadrant_Partition;
+	end Gen_Neg_Quad_Part_Y;
+	
+	-- CORDIC SPECIFIC CONSTANTS --
+	constant K_Nominal : real := Compute_Scaling_Nominal;
+	constant K_Original_Hyperbolic : real := Compute_Scaling_Original_Hyperbolic;
+	constant K_Extended_Hyperbolic : real := Compute_Scaling_Extended_Hyperbolic;
+	constant K_Hyperbolic : real := K_Original_Hyperbolic * K_Extended_Hyperbolic;
+	
+	constant ROC_Original_Hyperbolic : real := Compute_ROC_Original_Hyperbolic;
+	constant ROC_Extended_Hyperbolic : real := Compute_ROC_Extended_Hyperbolic;
+	constant ROC_Nominal : real := Compute_ROC_Nominal;
+	constant ROC_Linear : real := Compute_ROC_Linear;
+	
+	constant Arctan_LookUpTable : Circular_LookUpTable_t := Generate_Arctan_LookUpTable;
+	constant Arctan_Hyperbolic_LookUpTable : Hyperbolic_LookUpTable_t := Generate_Arctan_Hyperbolic_LookUpTable;
+	constant Power_of_2_LookUpTable : Linear_LookUpTable_t := Generate_Power_of_2_LookUpTable;
+	
+	constant SCALING_NOMINAL : Hyperbolic_Coordinate_t := to_sfixed(K_Nominal, Range_Of_Convergence_t'left, Range_Of_Convergence_t'right);
+	constant SCALING_HYPERBOLIC : Hyperbolic_Coordinate_t := to_sfixed(K_Hyperbolic, Hyperbolic_Coordinate_t'left, Hyperbolic_Coordinate_t'right);
+	
+	constant Pos_Quad_Part_X : Quadrant_Partition_LookUpTable_t := Gen_Pos_Quad_Part_X;
+	constant Pos_Quad_Part_Y : Quadrant_Partition_LookUpTable_t := Gen_Pos_Quad_Part_Y;
+	constant Neg_Quad_Part_X : Quadrant_Partition_LookUpTable_t := Gen_Neg_Quad_Part_X;
+	constant Neg_Quad_Part_Y : Quadrant_Partition_LookUpTable_t := Gen_Neg_Quad_Part_Y;
+end package body cordic_types;
